@@ -1,98 +1,144 @@
 const User = require("../models/user");
 const jwt = require("jsonwebtoken");
+
 const signUp = async (req, res) => {
   try {
+    const { name, email, password, confirmPassword } = req.body;
+
+    if (!name || !email || !password || !confirmPassword) {
+      return res.status(400).json({
+        status: "failed",
+        message: "All fields are required",
+      });
+    }
+
     const user = new User({
-      name: req.name,
-      email: req.email,
-      password: req.password,
-      confirmPassword: req.confirmPassword,
+      name,
+      email,
+      password,
+      confirmPassword,
     });
-    const save = user.save();
-    res.json({
-      status: true,
-      message: save,
+
+    const savedUser = await user.save();
+
+    res.status(201).json({
+      status: "success",
+      message: "User created successfully",
+      user: savedUser,
     });
   } catch (error) {
     console.log(error);
-  }
-};
-
-let signIn = async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.json({
-      message: "email or password is incorrect",
+    res.status(500).json({
+      status: "failed",
+      message: "Something went wrong",
     });
   }
+};
+
+const signIn = async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({
+      status: "failed",
+      message: "Email and password are required",
+    });
+  }
+
   try {
     const user = await User.findOne({ email });
-    console.log(user);
+
     if (!user) {
-      return res.json({
-        message: "Email Does Not exist",
+      return res.status(404).json({
+        status: "failed",
+        message: "Email does not exist",
       });
     }
-    const result = await user.comparePassword(password.user.password);
+
+    const result = await user.comparePassword(password); 
+
     if (!result) {
-      return res.json({
-        message: "Incorrect Password",
+      return res.status(401).json({
+        status: "failed",
+        message: "Incorrect password",
       });
     }
-    const token= jwt.sign({id: user._id}, "This is a secret key", {expireIn: '1h'})
-    return res.json({
-      status: 'success',
-      token
-    })
+
+    const token = jwt.sign(
+      { id: user._id },
+      "This is a secret key",
+      { expiresIn: "1h" }
+    );
+
+    return res.status(200).json({
+      status: "success",
+      token,
+    });
   } catch (err) {
-    return res.json({
-      message: "Email Does Not exist",
-    })
+    console.error(err);
+    return res.status(500).json({
+      status: "failed",
+      message: "Something went wrong during login",
+    });
   }
 };
 
-const getAllUser= async(req, res)=>{
-  try{
-    const users= await User.find()
-    res.json({
-      status: true,
-      users
-    })
-
-  }catch(error){
-    res.json({
-      message: error.message
-    })
-
+const getAllUser = async (req, res) => {
+  try {
+    const users = await User.find();
+    res.status(200).json({
+      status: "success",
+      users,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "failed",
+      message: error.message,
+    });
   }
-}
+};
 
-const protect= async function(req,res,next){
-  const token= req.headers.authorization;
-  jwt.verify(token, "This is a secret key", async (err, data)=>{
-    if (err){
-      return res.json({
-        status: failed,
-        message: "Invalid Token, Log in Again"
-      })
-    }
-    try{
-      const user= await User.findById(data.id)
-      if(!user){
-        return res.json({
+const protect = async (req, res, next) => {
+  const token = req.headers.authorization;
+
+  if (!token) {
+    return res.status(401).json({
+      status: "failed",
+      message: "Token missing",
+    });
+  }
+
+  jwt.verify(token, "This is a secret key", async (err, decoded) => {
+    if (err) {
+      return res.status(401).json({
         status: "failed",
-        message: "User not found"
-      })
+        message: "Invalid token, login again",
+      });
+    }
+
+    try {
+      const user = await User.findById(decoded.id);
+      if (!user) {
+        return res.status(404).json({
+          status: "failed",
+          message: "User not found",
+        });
       }
-      next()
-    }catch(err){
-      return res.json({
-        status: "failed",
-        message: "User not found"
-      })
-    }
-    
-  } )
-}
 
-module.exports = { signUp, signIn, getAllUser, protect };
+      req.user = user; 
+      next();
+    } catch (err) {
+      return res.status(500).json({
+        status: "failed",
+        message: "Server error",
+      });
+    }
+  });
+};
+
+module.exports = {
+  signUp,
+  signIn,
+  getAllUser,
+  protect,
+};
